@@ -11,4 +11,5 @@ tqdm
 numba
 quadprog
 inputs
-
+protobuf==3.20.*
+filterpy

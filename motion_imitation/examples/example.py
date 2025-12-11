@@ -29,11 +29,18 @@ from motion_imitation.envs import env_builder as env_builder
 from motion_imitation.robots import robot_config
 
 from motion_imitation.robots import laikago
+from motion_imitation.robots import a1
 
-def test(env):
+ROBOT_CLASS_MAP = {'A1': a1.A1, 'Laikago': laikago.Laikago}
+
+def test(env, robot):
   o = env.reset()
   while 1:
-    a = laikago.INIT_MOTOR_ANGLES
+    if isinstance(env.robot, laikago.Laikago):
+        a = laikago.INIT_MOTOR_ANGLES
+    else:
+        a = a1.INIT_MOTOR_ANGLES
+
     o, r, done, info = env.step(a)
     if done:
         o = env.reset()
@@ -43,12 +50,15 @@ def main():
   arg_parser = argparse.ArgumentParser()
   arg_parser.add_argument("--seed", dest="seed", type=int, default=None)
   arg_parser.add_argument("--visualize", dest="visualize", action="store_true", default=True)
+  arg_parser.add_argument("--robot", dest="robot", default="Laikago", choices=["A1", "Laikago"])
 
   args = arg_parser.parse_args()
- 
-  env = env_builder.build_laikago_env( motor_control_mode = robot_config.MotorControlMode.POSITION, enable_rendering=args.visualize)
-  
-  test(env=env)
+  robot = ROBOT_CLASS_MAP[args.robot]
+
+#   env = env_builder.build_laikago_env( motor_control_mode = robot_config.MotorControlMode.POSITION, enable_rendering=args.visualize)
+  env = env_builder.build_regular_env(robot, motor_control_mode=robot_config.MotorControlMode.POSITION, enable_rendering=args.visualize)
+
+  test(env, robot)
   
   return
 

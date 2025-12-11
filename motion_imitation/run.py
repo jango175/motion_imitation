@@ -33,10 +33,55 @@ from motion_imitation.learning import ppo_imitation as ppo_imitation
 
 from stable_baselines.common.callbacks import CheckpointCallback
 
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
+from unitree_sdk2py.utils.crc import CRC
+
+
 TIMESTEPS_PER_ACTORBATCH = 4096
 OPTIM_BATCHSIZE = 256
 
 ENABLE_ENV_RANDOMIZER = True
+DT = 0.002
+
+def stand_up(pub, cmd, crc):
+  stand_up_joint_pos = np.array([
+      0.00571868, 0.608813, -1.21763, -0.00571868, 0.608813, -1.21763,
+      0.00571868, 0.608813, -1.21763, -0.00571868, 0.608813, -1.21763
+  ],
+                              dtype=float)
+
+  stand_down_joint_pos = np.array([
+      0.0473455, 1.22187, -2.44375, -0.0473455, 1.22187, -2.44375, 0.0473455,
+      1.22187, -2.44375, -0.0473455, 1.22187, -2.44375
+  ],
+                                  dtype=float)
+
+  runing_time = 0.0
+
+  while runing_time < 3.0:
+    step_start = time.perf_counter()
+
+    runing_time += DT
+
+    # Total time for standing up or standing down is about 1.2s
+    phase = np.tanh(runing_time / 1.2)
+    for i in range(12):
+      cmd.motor_cmd[i].q = phase * stand_up_joint_pos[i] + (
+          1 - phase) * stand_down_joint_pos[i]
+      cmd.motor_cmd[i].kp = phase * 50.0 + (1 - phase) * 20.0
+      cmd.motor_cmd[i].dq = 0.0
+      cmd.motor_cmd[i].kd = 3.5
+      cmd.motor_cmd[i].tau = 0.0
+
+    cmd.crc = crc.Crc(cmd)
+    pub.Write(cmd)
+
+    time_until_next_step = DT - (time.perf_counter() - step_start)
+    if time_until_next_step > 0:
+        time.sleep(time_until_next_step)
 
 def set_rand_seed(seed=None):
   if seed is None:
@@ -100,6 +145,19 @@ def train(model, env, total_timesteps, output_dir="", int_save_freq=0):
   return
 
 def test(model, env, num_procs, num_episodes=None):
+  ChannelFactoryInitialize(1, "lo")
+  pub = ChannelPublisher("rt/lowcmd", LowCmd_)
+  pub.Init()
+  cmd = unitree_go_msg_dds__LowCmd_()
+  cmd.head[0] = 0xFE
+  cmd.head[1] = 0xEF
+  cmd.level_flag = 0xFF
+  cmd.gpio = 0
+  crc = CRC()
+  runing_time = 0.0
+
+  stand_up(pub, cmd, crc)
+
   curr_return = 0
   sum_return = 0
   episode_count = 0
@@ -115,10 +173,28 @@ def test(model, env, num_procs, num_episodes=None):
     o, r, done, info = env.step(a)
     curr_return += r
 
+    # send leg angles
+    step_start = time.perf_counter()
+    runing_time += DT
+    motor_angles = env.robot.GetMotorAngles()
+    for i in range(12):
+      cmd.motor_cmd[i].q = motor_angles[i]
+      cmd.motor_cmd[i].kp = 50.0
+      cmd.motor_cmd[i].dq = 0.0
+      cmd.motor_cmd[i].kd = 3.5
+      cmd.motor_cmd[i].tau = 0.0
+
+    cmd.crc = crc.Crc(cmd)
+    pub.Write(cmd)
+
+    time_until_next_step = DT - (time.perf_counter() - step_start)
+    if time_until_next_step > 0:
+        time.sleep(time_until_next_step)
+
     if done:
-        o = env.reset()
-        sum_return += curr_return
-        episode_count += 1
+      o = env.reset()
+      sum_return += curr_return
+      episode_count += 1
 
   sum_return = MPI.COMM_WORLD.allreduce(sum_return, MPI.SUM)
   episode_count = MPI.COMM_WORLD.allreduce(episode_count, MPI.SUM)
