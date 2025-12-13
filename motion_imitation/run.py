@@ -26,6 +26,7 @@ import os
 import random
 import tensorflow as tf
 import time
+import datetime
 
 from motion_imitation.envs import env_builder as env_builder
 from motion_imitation.learning import imitation_policies as imitation_policies
@@ -36,15 +37,48 @@ from stable_baselines.common.callbacks import CheckpointCallback
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_, LowState_
 from unitree_sdk2py.utils.crc import CRC
-
 
 TIMESTEPS_PER_ACTORBATCH = 4096
 OPTIM_BATCHSIZE = 256
 
 ENABLE_ENV_RANDOMIZER = True
 DT = 0.002
+
+# Prepare telemetry log file
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+telemetry_log_file = 'telemetry/telemetry_log_' + timestamp + '.csv'
+os.makedirs('telemetry', exist_ok=True)
+with open(telemetry_log_file, 'w') as f:
+  f.write("timestamp,"
+          "quat_w,quat_x,quat_y,quat_z,"
+          "gyro_x,gyro_y,gyro_z,"
+          "accel_x,accel_y,accel_z\n")
+
+
+def low_state_handler(msg: LowState_):
+  imu = msg.imu_state
+
+  # orientation (quaternion: w, x, y, z)
+  quat = imu.quaternion
+  # print(f"Quat: w={quat[0]:.2f}, x={quat[1]:.2f}, y={quat[2]:.2f}, z={quat[3]:.2f}")
+
+  # angular velocity (gyroscope)
+  gyro = imu.gyroscope
+  # print(f"Gyro: x={gyro[0]:.2f}, y={gyro[1]:.2f}, z={gyro[2]:.2f}")
+
+  # linear acceleration (accelerometer)
+  accel = imu.accelerometer
+  # print(f"Accel: x={accel[0]:.2f}, y={accel[1]:.2f}, z={accel[2]:.2f}")
+
+  # log to csv file
+  with open(telemetry_log_file, 'a') as f:
+    f.write(f"{time.time()},"
+            f"{quat[0]},{quat[1]},{quat[2]},{quat[3]},"
+            f"{gyro[0]},{gyro[1]},{gyro[2]},"
+            f"{accel[0]},{accel[1]},{accel[2]}\n")
+
 
 def stand_up(pub, cmd, crc):
   stand_up_joint_pos = np.array([
@@ -156,6 +190,8 @@ def test(model, env, num_procs, num_episodes=None):
   crc = CRC()
   runing_time = 0.0
 
+  subscriber = ChannelSubscriber("rt/lowstate", LowState_)
+  subscriber.Init(low_state_handler, 10)
   stand_up(pub, cmd, crc)
 
   curr_return = 0
@@ -189,7 +225,7 @@ def test(model, env, num_procs, num_episodes=None):
 
     time_until_next_step = DT - (time.perf_counter() - step_start)
     if time_until_next_step > 0:
-        time.sleep(time_until_next_step)
+      time.sleep(time_until_next_step)
 
     if done:
       o = env.reset()
