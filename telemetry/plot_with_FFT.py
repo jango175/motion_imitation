@@ -3,10 +3,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import pi
 from statistics import mean, stdev
+from math import atan2, asin, copysign
 
 
 class IMUTelemetryAnalyzer:
     def __init__(self, filename):
+        self.euler_roll = []
+        self.euler_pitch = []
+        self.euler_yaw = []
         self.filename = filename
         self.data = pd.read_csv(filename)
 
@@ -30,6 +34,43 @@ class IMUTelemetryAnalyzer:
         self.data = self.data[(self.data["time"] >= start_time_sec) & (self.data["time"] <= stop_time_sec)].reset_index(drop=True)
         self.data["time"] -= self.data["time"].iloc[0]
         print(f"Cut data before {start_time_sec:.2f}s -> {len(self.data)} samples remain")
+
+
+    # -------------------------------------------------
+    # Euler angle conversion
+    # -------------------------------------------------
+    def get_euler_orientation(self):
+        self.euler_roll = []
+        self.euler_pitch = []
+        self.euler_yaw = []
+
+        for _, row in self.data.iterrows():
+            qw = row['quat_w']
+            qx = row['quat_x']
+            qy = row['quat_y']
+            qz = row['quat_z']
+
+            # Roll (x-axis rotation)
+            sinr_cosp = 2 * (qw * qx + qy * qz)
+            cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
+            roll = atan2(sinr_cosp, cosr_cosp)
+
+            # Pitch (y-axis rotation)
+            sinp = 2 * (qw * qy - qz * qx)
+            if abs(sinp) >= 1:
+                pitch = copysign(pi / 2, sinp)  # use 90 degrees if out of range
+            else:
+                pitch = asin(sinp)
+
+            # Yaw (z-axis rotation)
+            siny_cosp = 2 * (qw * qz + qx * qy)
+            cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+            yaw = atan2(siny_cosp, cosy_cosp)
+
+            self.euler_roll.append(roll * (180.0 / pi))
+            self.euler_pitch.append(pitch * (180.0 / pi))
+            self.euler_yaw.append(yaw * (180.0 / pi))
+
 
     # -------------------------------------------------
     # Pretty statistics
@@ -106,6 +147,21 @@ class IMUTelemetryAnalyzer:
 
         print(f"\nEstimated sampling frequency: {fs:.1f} Hz")
 
+        self.get_euler_orientation()
+        plt.figure(figsize=(10, 6))
+        for axis, euler_data in zip(["Roll", "Pitch", "Yaw"],
+                                    [self.euler_roll, self.euler_pitch, self.euler_yaw]):
+            f, mag = self._fft(euler_data, fs)
+            plt.plot(f, mag, label=axis)
+        plt.xlim(0, 20)  # walking dynamics range
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Magnitude [$^\circ$]")
+        plt.title("\\bf{Orientation FFT data}")
+        plt.legend()
+        plt.grid()
+        # plt.tight_layout()
+        plt.show()
+
         plt.figure(figsize=(10, 6))
         for axis in ["gyro_x", "gyro_y", "gyro_z"]:
             f, mag = self._fft(self.data[axis].values, fs)
@@ -142,8 +198,8 @@ class IMUTelemetryAnalyzer:
 # Example usage
 # -------------------------------------------------
 if __name__ == "__main__":
-    # analyzer = IMUTelemetryAnalyzer("log_01_walki_PID.csv")
-    analyzer = IMUTelemetryAnalyzer('telemetry_log_20251214_235450.csv')
+    analyzer = IMUTelemetryAnalyzer("log_01_walki_PID.csv")
+    # analyzer = IMUTelemetryAnalyzer('telemetry_log_20251214_235450.csv')
 
     analyzer.cut_start(3.0, 12.0)
     analyzer.print_stats()
