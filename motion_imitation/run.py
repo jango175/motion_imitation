@@ -178,7 +178,13 @@ def train(model, env, total_timesteps, output_dir="", int_save_freq=0):
 
   return
 
-def test(model, env, num_procs, num_episodes=None):
+def test(model, env, num_procs, num_episodes=None, visualize=False):
+  # adjust for simulation lag
+  if visualize == False:
+    DT = 0.01
+  else:
+    DT = 0.002
+
   ChannelFactoryInitialize(1, "lo")
   pub = ChannelPublisher("rt/lowcmd", LowCmd_)
   pub.Init()
@@ -287,7 +293,8 @@ def main():
       test(model=model,
            env=env,
            num_procs=num_procs,
-           num_episodes=args.num_test_episodes)
+           num_episodes=args.num_test_episodes,
+           visualize=args.visualize)
   else:
       assert False, "Unsupported mode: " + args.mode
 

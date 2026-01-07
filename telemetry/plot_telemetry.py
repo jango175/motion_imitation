@@ -165,18 +165,6 @@ class TelemetryPlotter:
     stats = self.data.describe()
     print(stats)
 
-    gyro_x_stats = self.data['gyro_x'].describe()
-    print("Gyro X Statistics:")
-    print(gyro_x_stats)
-
-    gyro_y_stats = self.data['gyro_y'].describe()
-    print("Gyro Y Statistics:")
-    print(gyro_y_stats)
-
-    gyro_z_stats = self.data['gyro_z'].describe()
-    print("Gyro Z Statistics:")
-    print(gyro_z_stats)
-
     roll_mean = mean(self.euler_roll)
     pitch_mean = mean(self.euler_pitch)
     yaw_mean = mean(self.euler_yaw)
@@ -190,9 +178,22 @@ class TelemetryPlotter:
     print(f"Pitch: Mean = {pitch_mean:.2f} deg, Std Dev = {pitch_stdev:.2f} deg")
     print(f"Yaw: Mean = {yaw_mean:.2f} deg, Std Dev = {yaw_stdev:.2f} deg")
 
+    gyro_x_stats = self.data['gyro_x'].describe()
+    print("Gyro X Statistics:")
+    print(gyro_x_stats)
+
+    gyro_y_stats = self.data['gyro_y'].describe()
+    print("Gyro Y Statistics:")
+    print(gyro_y_stats)
+
+    gyro_z_stats = self.data['gyro_z'].describe()
+    print("Gyro Z Statistics:")
+    print(gyro_z_stats)
+
 
 def main():
   telem = TelemetryPlotter('telemetry_log_20251214_235450.csv')
+#   telem = TelemetryPlotter('log_01_walki_PID.csv')
 
   telem.cut_data(3.0, 12.0)
 
